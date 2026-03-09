@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NagarDrishti — Civic Geo-Fence Awareness Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #070b14;
+  --surface: #0d1424;
+  --surface2: #111827;
+  --border: rgba(99,179,255,0.12);
+  --accent: #3b82f6;
+  --accent2: #06b6d4;
+  --accent3: #f59e0b;
+  --green: #10b981;
+  --red: #ef4444;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --glow: rgba(59,130,246,0.3);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;overflow-x:hidden;}
+
+/* ── GRID NOISE BACKGROUND ── */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% 10%, rgba(59,130,246,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(6,182,212,0.06) 0%, transparent 60%);
+  pointer-events:none;z-index:0;
+}
+
+/* ── NAV ── */
+nav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(7,11,20,0.9);
+  backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  padding:0 2rem;
+  display:flex;align-items:center;justify-content:space-between;
+  height:60px;
+}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{
+  width:34px;height:34px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border-radius:8px;
+  display:grid;place-items:center;
+  font-size:16px;
+}
+.logo-text{font-family:'Syne',sans-serif;font-size:1.2rem;font-weight:800;letter-spacing:-0.02em;}
+.logo-text span{color:var(--accent2);}
+.nav-tabs{display:flex;gap:4px;}
+.nav-tab{
+  padding:6px 16px;border-radius:6px;border:none;
+  background:transparent;color:var(--muted);
+  font-family:'Space Grotesk',sans-serif;font-size:0.85rem;font-weight:500;
+  cursor:pointer;transition:all 0.2s;
+}
+.nav-tab.active,.nav-tab:hover{background:var(--surface2);color:var(--text);}
+.nav-tab.active{color:var(--accent);}
+.nav-badge{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:600;
+  font-family:'JetBrains Mono',monospace;
+}
+
+/* ── PAGES ── */
+.page{display:none;padding:2rem;position:relative;z-index:1;animation:fadeIn 0.3s ease;}
+.page.active{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── STAT CARDS ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:2rem;}
+.stat-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:1.25rem 1.5rem;
+  position:relative;overflow:hidden;
+  transition:border-color 0.2s,transform 0.2s;
+}
+.stat-card:hover{border-color:rgba(99,179,255,0.3);transform:translateY(-2px);}
+.stat-card::after{
+  content:'';position:absolute;top:0;right:0;
+  width:80px;height:80px;border-radius:50%;
+  background:var(--accent-color,var(--accent));
+  opacity:0.06;transform:translate(30%,-30%);
+}
+.stat-label{font-size:0.78rem;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;}
+.stat-value{font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;line-height:1;}
+.stat-sub{font-size:0.78rem;color:var(--muted);margin-top:0.4rem;}
+.stat-icon{position:absolute;top:1.25rem;right:1.25rem;font-size:1.5rem;opacity:0.6;}
+
+/* ── SECTION HEADERS ── */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;}
+.section-title{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;}
+.section-title small{font-family:'Space Grotesk',sans-serif;font-size:0.78rem;font-weight:400;color:var(--muted);margin-left:8px;}
+
+/* ── MAP ── */
+#admin-map,#public-map{
+  width:100%;height:440px;border-radius:12px;
+  border:1px solid var(--border);overflow:hidden;
+}
+.leaflet-container{background:#0d1a2e!important;}
+.map-wrapper{position:relative;}
+.map-overlay-badge{
+  position:absolute;top:12px;left:12px;z-index:500;
+  background:rgba(7,11,20,0.9);border:1px solid var(--border);
+  border-radius:8px;padding:6px 12px;
+  font-size:0.75rem;color:var(--accent2);font-family:'JetBrains Mono',monospace;
+  backdrop-filter:blur(8px);
+}
+
+/* ── TWO COL LAYOUT ── */
+.two-col{display:grid;grid-template-columns:1fr 1.4fr;gap:1.5rem;margin-top:1.5rem;}
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:1.5rem;
+}
+.card h3{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;margin-bottom:1.25rem;
+  display:flex;align-items:center;gap:8px;}
+
+/* ── FORM ── */
+.form-group{margin-bottom:1rem;}
+.form-label{display:block;font-size:0.8rem;font-weight:500;color:var(--muted);
+  text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.4rem;}
+.form-input,.form-select,.form-textarea{
+  width:100%;background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;padding:0.65rem 0.875rem;
+  color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:0.9rem;
+  transition:border-color 0.2s,box-shadow 0.2s;outline:none;
+}
+.form-input:focus,.form-select:focus,.form-textarea:focus{
+  border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,0.15);
+}
+.form-select option{background:var(--surface2);}
+.form-textarea{resize:vertical;min-height:80px;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:0.65rem 1.25rem;border-radius:8px;border:none;
+  font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:600;
+  cursor:pointer;transition:all 0.2s;
+}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;}
+.btn-primary:hover{opacity:0.9;transform:translateY(-1px);box-shadow:0 4px 16px rgba(59,130,246,0.4);}
+.btn-danger{background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);}
+.btn-danger:hover{background:rgba(239,68,68,0.25);}
+.btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.btn-ghost:hover{border-color:var(--accent);}
+.btn-sm{padding:0.35rem 0.75rem;font-size:0.78rem;}
+.btn-full{width:100%;justify-content:center;}
+
+/* ── PROJECT TABLE ── */
+.project-list{display:flex;flex-direction:column;gap:0.75rem;max-height:360px;overflow-y:auto;padding-right:4px;}
+.project-list::-webkit-scrollbar{width:4px;}
+.project-list::-webkit-scrollbar-track{background:transparent;}
+.project-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.project-item{
+  background:var(--bg);border:1px solid var(--border);border-radius:10px;
+  padding:0.875rem 1rem;display:flex;align-items:center;gap:1rem;
+  transition:border-color 0.2s;cursor:pointer;
+}
+.project-item:hover{border-color:rgba(99,179,255,0.3);}
+.proj-icon{
+  width:36px;height:36px;border-radius:8px;
+  display:grid;place-items:center;font-size:1.1rem;flex-shrink:0;
+}
+.proj-info{flex:1;min-width:0;}
+.proj-name{font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.proj-meta{font-size:0.75rem;color:var(--muted);margin-top:2px;}
+.proj-actions{display:flex;gap:6px;flex-shrink:0;}
+.proj-badge{
+  font-size:0.68rem;padding:2px 8px;border-radius:20px;font-weight:600;
+  font-family:'JetBrains Mono',monospace;white-space:nowrap;
+}
+
+/* ── CATEGORY COLORS ── */
+.cat-hospital{background:rgba(239,68,68,0.15);color:#f87171;}
+.cat-college{background:rgba(245,158,11,0.15);color:#fbbf24;}
+.cat-bridge{background:rgba(59,130,246,0.15);color:#60a5fa;}
+.cat-road{background:rgba(16,185,129,0.15);color:#34d399;}
+.cat-other{background:rgba(139,92,246,0.15);color:#a78bfa;}
+
+/* ── PUBLIC PAGE ── */
+.public-hero{
+  background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(6,182,212,0.05));
+  border:1px solid var(--border);border-radius:16px;padding:1.5rem 2rem;
+  margin-bottom:1.5rem;display:flex;align-items:center;justify-content:space-between;
+}
+.public-hero h1{font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:800;line-height:1.2;}
+.public-hero h1 span{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.public-hero p{color:var(--muted);font-size:0.9rem;margin-top:0.5rem;max-width:420px;}
+.location-status{
+  background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;
+  display:flex;align-items:center;gap:12px;min-width:200px;
+}
+.loc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.loc-dot.active{background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite;}
+.loc-dot.inactive{background:var(--muted);}
+@keyframes pulse{0%,100%{box-shadow:0 0 6px var(--green)}50%{box-shadow:0 0 14px var(--green),0 0 20px rgba(16,185,129,0.4)}}
+.loc-text{font-size:0.8rem;}
+.loc-text strong{display:block;font-size:0.9rem;}
+
+/* ── NOTIFICATION POPUP ── */
+.notification-popup{
+  position:fixed;top:80px;right:24px;z-index:9999;
+  width:360px;
+  background:var(--surface);
+  border:1px solid var(--accent);
+  border-radius:16px;padding:0;overflow:hidden;
+  box-shadow:0 8px 40px rgba(0,0,0,0.5),0 0 0 1px rgba(59,130,246,0.2),0 0 40px rgba(59,130,246,0.1);
+  transform:translateX(110%);opacity:0;
+  transition:all 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+.notification-popup.show{transform:translateX(0);opacity:1;}
+.notif-header{
+  background:linear-gradient(135deg,rgba(59,130,246,0.2),rgba(6,182,212,0.1));
+  padding:1rem 1.25rem;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:12px;
+}
+.notif-icon-wrap{
+  width:44px;height:44px;border-radius:10px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:grid;place-items:center;font-size:1.4rem;flex-shrink:0;
+}
+.notif-title{font-family:'Syne',sans-serif;font-size:1.05rem;font-weight:700;}
+.notif-subtitle{font-size:0.75rem;color:var(--accent2);margin-top:2px;font-family:'JetBrains Mono',monospace;}
+.notif-close{margin-left:auto;background:transparent;border:none;color:var(--muted);
+  cursor:pointer;font-size:1.2rem;padding:4px;transition:color 0.2s;}
+.notif-close:hover{color:var(--text);}
+.notif-body{padding:1.25rem;}
+.notif-desc{font-size:0.875rem;color:var(--text);line-height:1.6;margin-bottom:1rem;}
+.notif-impact{
+  background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);
+  border-radius:8px;padding:0.75rem;margin-bottom:1rem;
+}
+.notif-impact-label{font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--green);font-weight:600;margin-bottom:4px;}
+.notif-impact-text{font-size:0.82rem;color:var(--text);line-height:1.5;}
+.notif-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.notif-metric{background:var(--bg);border-radius:8px;padding:0.6rem;text-align:center;}
+.notif-metric-val{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;color:var(--accent2);}
+.notif-metric-key{font-size:0.68rem;color:var(--muted);margin-top:2px;}
+.notif-footer{
+  padding:0.75rem 1.25rem;border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.notif-visit-count{font-size:0.75rem;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.ping-ring{
+  position:absolute;width:20px;height:20px;border-radius:50%;
+  border:2px solid var(--accent);top:12px;left:12px;
+  animation:ring 1.5s infinite;
+}
+@keyframes ring{
+  0%{transform:scale(0.8);opacity:1}
+  100%{transform:scale(2.5);opacity:0}
+}
+
+/* ── ANALYTICS ── */
+.analytics-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:1.5rem;margin-top:1.5rem;align-items:start;}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;overflow:hidden;min-width:0;}
+.chart-card h3{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;margin-bottom:1.25rem;}
+.chart-card canvas{max-width:100%;display:block;}
+.leaderboard{display:flex;flex-direction:column;gap:10px;}
+.lb-item{
+  display:flex;align-items:center;gap:12px;
+  background:var(--bg);border-radius:8px;padding:0.75rem;
+  border:1px solid var(--border);min-width:0;overflow:hidden;
+}
+.lb-rank{
+  width:28px;height:28px;border-radius:6px;
+  display:grid;place-items:center;
+  font-weight:700;font-size:0.85rem;flex-shrink:0;
+}
+.lb-rank.gold{background:rgba(245,158,11,0.2);color:#fbbf24;}
+.lb-rank.silver{background:rgba(148,163,184,0.2);color:#94a3b8;}
+.lb-rank.bronze{background:rgba(180,83,9,0.2);color:#d97706;}
+.lb-rank.other{background:var(--surface2);color:var(--muted);}
+.lb-name{flex:1;font-size:0.875rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.lb-visits{font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--accent2);}
+.progress-bar-wrap{margin-top:4px;}
+.progress-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 1s ease;}
+
+/* ── TOAST ── */
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(60px);
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:10px;padding:10px 20px;font-size:0.85rem;
+  opacity:0;transition:all 0.3s;z-index:9998;white-space:nowrap;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ── EMPTY STATE ── */
+.empty-state{text-align:center;padding:3rem;color:var(--muted);}
+.empty-state .icon{font-size:3rem;margin-bottom:1rem;opacity:0.4;}
+
+/* ── SIMULATE SECTION ── */
+.simulate-bar{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:1rem 1.5rem;margin-bottom:1.5rem;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+}
+.simulate-bar label{font-size:0.85rem;font-weight:500;color:var(--muted);white-space:nowrap;}
+.simulate-select{flex:1;min-width:200px;}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  .stats-row{grid-template-columns:repeat(2,1fr);}
+  .two-col,.analytics-grid{grid-template-columns:1fr;}
+  .public-hero{flex-direction:column;align-items:flex-start;gap:1rem;}
+  .notification-popup{width:calc(100vw - 48px);}
+}
+@media(max-width:600px){
+  .stats-row{grid-template-columns:1fr 1fr;}
+  nav{padding:0 1rem;}
+  .page{padding:1rem;}
+}
+
+/* ── LEAFLET DARK ── */
+.leaflet-tile{filter:brightness(0.7) saturate(0.8) hue-rotate(190deg);}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">
+    <div class="logo-icon">🏛️</div>
+    <div class="logo-text">Nagar<span>Drishti</span></div>
+    <span class="nav-badge">BETA</span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPage('public')">🗺️ Public Map</button>
+    <button class="nav-tab" onclick="showPage('admin')">⚙️ Admin</button>
+    <button class="nav-tab" onclick="showPage('analytics')">📊 Analytics</button>
+  </div>
+</nav>
+
+<!-- ══════════════════ PUBLIC PAGE ══════════════════ -->
+<div class="page active" id="page-public">
+  <div class="public-hero">
+    <div>
+      <h1>Your City's <span>Development</span><br/>At Your Fingertips</h1>
+      <p>Walk near a government project and instantly learn what was built, why it matters, and how it impacts your community.</p>
+    </div>
+    <div class="location-status">
+      <div class="loc-dot inactive" id="loc-dot"></div>
+      <div class="loc-text">
+        <strong id="loc-status-text">Location Inactive</strong>
+        <span id="loc-coords" style="color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:0.72rem;"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Simulate bar -->
+  <div class="simulate-bar">
+    <span style="font-size:0.85rem;font-weight:600;">🎮 Demo Simulator:</span>
+    <label>Jump to project zone:</label>
+    <select class="form-select simulate-select" id="sim-select" style="max-width:280px;"></select>
+    <button class="btn btn-primary btn-sm" onclick="simulateLocation()">▶ Simulate Entry</button>
+    <button class="btn btn-ghost btn-sm" onclick="startLiveTracking()">📍 Use Live GPS</button>
+    <span id="sim-status" style="font-size:0.78rem;color:var(--muted);"></span>
+  </div>
+
+  <div class="map-wrapper">
+    <div class="map-overlay-badge" id="map-scan-badge">🔍 SCANNING — 0 zones active</div>
+    <div id="public-map"></div>
+  </div>
+
+  <!-- Nearby projects list -->
+  <div style="margin-top:1.5rem;">
+    <div class="section-header">
+      <div class="section-title">Nearby Development Projects <small id="nearby-count">Detecting…</small></div>
+    </div>
+    <div class="project-list" id="nearby-list"></div>
+  </div>
+</div>
+
+<!-- ══════════════════ ADMIN PAGE ══════════════════ -->
+<div class="page" id="page-admin">
+  <!-- Stats Row -->
+  <div class="stats-row" id="admin-stats"></div>
+
+  <div class="two-col">
+    <!-- Add Project Form -->
+    <div class="card">
+      <h3>➕ <span id="form-title">Add New Project</span></h3>
+      <input type="hidden" id="edit-id"/>
+      <div class="form-group">
+        <label class="form-label">Project Name *</label>
+        <input class="form-input" id="f-name" placeholder="e.g. District Government Hospital Phase 2"/>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Category *</label>
+          <select class="form-select" id="f-cat">
+            <option value="Hospital">🏥 Hospital</option>
+            <option value="College">🎓 College</option>
+            <option value="Bridge">🌉 Bridge</option>
+            <option value="Road">🛣️ Road</option>
+            <option value="Other">🏗️ Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Geo-fence Radius (m) *</label>
+          <input class="form-input" id="f-radius" type="number" value="300" min="50" max="5000"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Development Description *</label>
+        <textarea class="form-textarea" id="f-desc" placeholder="Describe the work completed at this location…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Public Impact Statement *</label>
+        <textarea class="form-textarea" id="f-impact" placeholder="How does this project benefit citizens?…"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Latitude *</label>
+          <input class="form-input" id="f-lat" type="number" step="0.0001" placeholder="e.g. 28.6139"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Longitude *</label>
+          <input class="form-input" id="f-lng" type="number" step="0.0001" placeholder="e.g. 77.2090"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Budget (₹ Crore)</label>
+          <input class="form-input" id="f-budget" type="number" step="0.1" placeholder="e.g. 45.5"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Beneficiaries</label>
+          <input class="form-input" id="f-ben" placeholder="e.g. 50,000 residents"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:0.5rem;">
+        <button class="btn btn-primary" style="flex:1" onclick="saveProject()">💾 Save Project</button>
+        <button class="btn btn-ghost" onclick="resetForm()">✕ Reset</button>
+      </div>
+      <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--muted);">
+        💡 Tip: Click anywhere on the map below to auto-fill coordinates
+      </div>
+    </div>
+
+    <!-- Project List + Map -->
+    <div style="display:flex;flex-direction:column;gap:1rem;">
+      <div class="card" style="padding:1rem;">
+        <h3 style="margin-bottom:1rem;">🗺️ Admin Map View</h3>
+        <div id="admin-map" style="height:240px;border-radius:8px;"></div>
+      </div>
+      <div class="card">
+        <h3>📋 All Projects <small style="font-size:0.75rem;font-weight:400;color:var(--muted);" id="proj-count-label"></small></h3>
+        <div class="project-list" id="admin-project-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ ANALYTICS PAGE ══════════════════ -->
+<div class="page" id="page-analytics">
+  <div class="stats-row" id="analytics-stats"></div>
+  <div class="analytics-grid">
+    <div class="chart-card">
+      <h3>📊 Visits by Project</h3>
+      <div style="position:relative;height:260px;width:100%;"><canvas id="visits-chart"></canvas></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:1.5rem;min-width:0;overflow:hidden;">
+      <div class="chart-card">
+        <h3>🏆 Top Triggered Zones</h3>
+        <div class="leaderboard" id="leaderboard"></div>
+      </div>
+      <div class="chart-card">
+        <h3>🗂️ Projects by Category</h3>
+        <div style="position:relative;height:180px;width:100%;"><canvas id="cat-chart"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ NOTIFICATION POPUP ══════════════════ -->
+<div class="notification-popup" id="notif-popup">
+  <div class="ping-ring"></div>
+  <div class="notif-header">
+    <div class="notif-icon-wrap" id="notif-icon">🏥</div>
+    <div>
+      <div class="notif-title" id="notif-title">Project Name</div>
+      <div class="notif-subtitle" id="notif-subtitle">📍 You are inside the geo-fence</div>
+    </div>
+    <button class="notif-close" onclick="closeNotif()">✕</button>
+  </div>
+  <div class="notif-body">
+    <div class="notif-desc" id="notif-desc">Description here</div>
+    <div class="notif-impact">
+      <div class="notif-impact-label">🌱 Public Impact</div>
+      <div class="notif-impact-text" id="notif-impact">Impact here</div>
+    </div>
+    <div class="notif-metrics">
+      <div class="notif-metric">
+        <div class="notif-metric-val" id="notif-budget">—</div>
+        <div class="notif-metric-key">Budget (₹ Cr)</div>
+      </div>
+      <div class="notif-metric">
+        <div class="notif-metric-val" id="notif-ben">—</div>
+        <div class="notif-metric-key">Beneficiaries</div>
+      </div>
+    </div>
+  </div>
+  <div class="notif-footer">
+    <span class="notif-visit-count" id="notif-visits">👁️ 0 citizen visits</span>
+    <span id="notif-cat-badge" class="proj-badge">Category</span>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+//  DATA STORE
+// ══════════════════════════════════════════════
+const MOCK_PROJECTS = [
+  {
+    id:1, name:"City Government Multi-Specialty Hospital",
+    category:"Hospital",
+    desc:"Newly constructed 300-bed multi-specialty government hospital featuring ICU, dialysis center, trauma ward, and free OPD services. Equipped with digital health records and telemedicine facility.",
+    impact:"Provides free healthcare to 1.2 lakh citizens annually. Reduces patient travel to private hospitals by 65%. Emergency services available 24/7.",
+    lat:28.6139, lng:77.2090, radius:400,
+    budget:"₹185 Cr", ben:"1,20,000/yr", visits:247
+  },
+  {
+    id:2, name:"Rajiv Gandhi Engineering College Campus",
+    category:"College",
+    desc:"State-of-the-art 120-acre engineering campus with smart classrooms, robotics lab, EV charging stations, and a 1000-seat auditorium. Phase 1 construction complete.",
+    impact:"Creates 2,400 new engineering seats. Reduces education-related migration by 40%. Provides 300 local employment opportunities.",
+    lat:28.6280, lng:77.2190, radius:500,
+    budget:"₹320 Cr", ben:"2,400 students", visits:183
+  },
+  {
+    id:3, name:"Yamuna Expressway Urban Flyover",
+    category:"Bridge",
+    desc:"2.4 km 6-lane elevated flyover over Yamuna river with dedicated cycling track and pedestrian walkway. Earthquake-resistant design with smart traffic sensors.",
+    impact:"Reduces peak-hour traffic congestion by 70%. Cuts commute time by 35 minutes daily for 80,000 vehicles. Zero accidents since inauguration.",
+    lat:28.5920, lng:77.2010, radius:350,
+    budget:"₹245 Cr", ben:"80,000 vehicles/day", visits:312
+  },
+  {
+    id:4, name:"Smart Road Corridor — NH48 Widening",
+    category:"Road",
+    desc:"Expansion of 18 km national highway from 4 to 8 lanes including solar lighting, smart CCTV, pothole-free concrete surface, and emergency call boxes every 500m.",
+    impact:"Reduces accident fatalities by 55%. Improves freight logistics saving ₹45 Cr/year. Enables ambulance response time under 8 minutes.",
+    lat:28.6050, lng:77.2300, radius:600,
+    budget:"₹95 Cr", ben:"3.2 lakh commuters", visits:198
+  },
+  {
+    id:5, name:"Integrated Water Treatment Plant",
+    category:"Other",
+    desc:"50 MLD capacity modern water treatment plant with real-time quality sensors, solar-powered operations, and zero liquid discharge policy. Serves 5 municipal zones.",
+    impact:"Provides clean drinking water to 4.5 lakh residents. Eliminates waterborne diseases in target zones. Reduces water tanker dependency by 90%.",
+    lat:28.6200, lng:77.1950, radius:450,
+    budget:"₹128 Cr", ben:"4,50,000 residents", visits:156
+  }
+];
+
+let projects = JSON.parse(localStorage.getItem('nagar_projects') || 'null') || MOCK_PROJECTS;
+let userLat = null, userLng = null;
+let publicMap = null, adminMap = null;
+let publicMarkers = [], publicCircles = [];
+let userMarker = null;
+let watchId = null;
+let triggeredIds = new Set();
+let visitsChart = null, catChart = null;
+let editingId = null;
+
+function saveData(){ localStorage.setItem('nagar_projects', JSON.stringify(projects)); }
+
+// ══════════════════════════════════════════════
+//  PAGE NAVIGATION
+// ══════════════════════════════════════════════
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if(id==='admin'){ renderAdminStats(); renderAdminMap(); renderAdminList(); }
+  if(id==='analytics'){ renderAnalytics(); }
+  if(id==='public'){ 
+    setTimeout(()=>{ if(publicMap) publicMap.invalidateSize(); },100);
+    renderPublicProjects(); 
+    populateSimSelect();
+  }
+}
+
+// ══════════════════════════════════════════════
+//  HAVERSINE FORMULA
+// ══════════════════════════════════════════════
+function haversine(lat1,lng1,lat2,lng2){
+  const R=6371000;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ══════════════════════════════════════════════
+//  CATEGORY HELPERS
+// ══════════════════════════════════════════════
+const CAT_ICONS = {Hospital:'🏥',College:'🎓',Bridge:'🌉',Road:'🛣️',Other:'🏗️'};
+const CAT_COLORS = {Hospital:'#ef4444',College:'#f59e0b',Bridge:'#3b82f6',Road:'#10b981',Other:'#8b5cf6'};
+const CAT_CLASS = {Hospital:'cat-hospital',College:'cat-college',Bridge:'cat-bridge',Road:'cat-road',Other:'cat-other'};
+
+function catIcon(c){ return CAT_ICONS[c]||'📍'; }
+function catColor(c){ return CAT_COLORS[c]||'#64748b'; }
+function catClass(c){ return CAT_CLASS[c]||'cat-other'; }
+
+function createDivIcon(cat){
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:36px;height:36px;border-radius:50%;background:${catColor(cat)};display:grid;place-items:center;font-size:18px;border:2px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.4)">${catIcon(cat)}</div>`,
+    iconSize:[36,36], iconAnchor:[18,18], popupAnchor:[0,-20]
+  });
+}
+
+// ══════════════════════════════════════════════
+//  PUBLIC MAP
+// ══════════════════════════════════════════════
+function initPublicMap(){
+  publicMap = L.map('public-map',{zoomControl:true}).setView([28.6139,77.2090],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap',maxZoom:19
+  }).addTo(publicMap);
+  renderPublicProjects();
+  populateSimSelect();
+}
+
+function renderPublicProjects(){
+  if(!publicMap) return;
+  publicMarkers.forEach(m=>publicMap.removeLayer(m));
+  publicCircles.forEach(c=>publicMap.removeLayer(c));
+  publicMarkers=[]; publicCircles=[];
+
+  projects.forEach(p=>{
+    const circle = L.circle([p.lat,p.lng],{
+      radius:p.radius,
+      color:catColor(p.category),
+      fillColor:catColor(p.category),
+      fillOpacity:0.1, weight:2, dashArray:'6,4'
+    }).addTo(publicMap);
+    publicCircles.push(circle);
+
+    const marker = L.marker([p.lat,p.lng],{icon:createDivIcon(p.category)})
+      .addTo(publicMap)
+      .bindPopup(`<div style="font-family:'Space Grotesk',sans-serif;min-width:200px;">
+        <strong style="font-size:0.9rem;">${p.name}</strong><br/>
+        <span style="font-size:0.78rem;color:#64748b;">${p.category} · ${p.radius}m zone · ${p.visits} visits</span>
+      </div>`);
+    publicMarkers.push(marker);
+  });
+
+  document.getElementById('map-scan-badge').textContent = `🔍 SCANNING — ${projects.length} zones active`;
+  renderNearbyList();
+}
+
+function renderNearbyList(){
+  const el = document.getElementById('nearby-list');
+  const cnt = document.getElementById('nearby-count');
+  if(!projects.length){
+    el.innerHTML='<div class="empty-state"><div class="icon">📭</div><p>No projects yet</p></div>';
+    cnt.textContent=''; return;
+  }
+  cnt.textContent = projects.length+' zones loaded';
+  el.innerHTML = projects.map(p=>`
+    <div class="project-item" onclick="zoomToProject(${p.id})">
+      <div class="proj-icon" style="background:${catColor(p.category)}20;">${catIcon(p.category)}</div>
+      <div class="proj-info">
+        <div class="proj-name">${p.name}</div>
+        <div class="proj-meta">${p.radius}m radius · 👁️ ${p.visits} visits · ${p.budget||'—'}</div>
+      </div>
+      <span class="proj-badge ${catClass(p.category)}">${p.category}</span>
+    </div>`).join('');
+}
+
+function zoomToProject(id){
+  const p = projects.find(x=>x.id===id);
+  if(!p||!publicMap) return;
+  publicMap.flyTo([p.lat,p.lng],16,{duration:1.2});
+}
+
+function populateSimSelect(){
+  const sel = document.getElementById('sim-select');
+  sel.innerHTML = projects.map(p=>`<option value="${p.id}">${catIcon(p.category)} ${p.name}</option>`).join('');
+}
+
+function simulateLocation(){
+  const id = parseInt(document.getElementById('sim-select').value);
+  const p = projects.find(x=>x.id===id);
+  if(!p){ showToast('No project selected'); return; }
+  const offset = (Math.random()-0.5)*0.001;
+  updateUserLocation(p.lat+offset, p.lng+offset, true);
+  document.getElementById('sim-status').textContent = `↗ Simulated near ${p.name.substring(0,30)}…`;
+  showToast(`📍 Simulating entry near "${p.name.substring(0,40)}…"`);
+}
+
+function startLiveTracking(){
+  if(!navigator.geolocation){ showToast('⚠️ Geolocation not supported'); return; }
+  if(watchId){ navigator.geolocation.clearWatch(watchId); watchId=null; }
+  watchId = navigator.geolocation.watchPosition(
+    pos=>{ updateUserLocation(pos.coords.latitude,pos.coords.longitude,false); showToast('📍 Live GPS tracking active'); },
+    err=>{ showToast('⚠️ Location error: '+err.message); },
+    {enableHighAccuracy:true,timeout:10000}
+  );
+}
+
+function updateUserLocation(lat,lng,simulated){
+  userLat=lat; userLng=lng;
+  const dot=document.getElementById('loc-dot');
+  dot.className='loc-dot active';
+  document.getElementById('loc-status-text').textContent = simulated?'Simulated Position':'Live GPS';
+  document.getElementById('loc-coords').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+  if(publicMap){
+    if(userMarker) publicMap.removeLayer(userMarker);
+    userMarker = L.marker([lat,lng],{icon:L.divIcon({
+      className:'',
+      html:`<div style="width:16px;height:16px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 6px rgba(59,130,246,0.25),0 0 16px rgba(59,130,246,0.5);animation:userPulse 1.5s infinite"></div>
+      <style>@keyframes userPulse{0%,100%{box-shadow:0 0 0 6px rgba(59,130,246,0.25)}50%{box-shadow:0 0 0 12px rgba(59,130,246,0.08)}}</style>`,
+      iconSize:[16,16], iconAnchor:[8,8]
+    })}).addTo(publicMap);
+    publicMap.panTo([lat,lng]);
+  }
+  checkGeofences(lat,lng);
+}
+
+function checkGeofences(lat,lng){
+  projects.forEach(p=>{
+    const dist = haversine(lat,lng,p.lat,p.lng);
+    if(dist<=p.radius && !triggeredIds.has(p.id)){
+      triggeredIds.add(p.id);
+      p.visits = (p.visits||0)+1;
+      saveData();
+      showNotification(p);
+    } else if(dist>p.radius+50){
+      triggeredIds.delete(p.id);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  NOTIFICATION
+// ══════════════════════════════════════════════
+function showNotification(p){
+  document.getElementById('notif-icon').textContent = catIcon(p.category);
+  document.getElementById('notif-title').textContent = p.name;
+  document.getElementById('notif-subtitle').textContent = `📍 You are inside the geo-fence · ${p.category}`;
+  document.getElementById('notif-desc').textContent = p.desc;
+  document.getElementById('notif-impact').textContent = p.impact;
+  document.getElementById('notif-budget').textContent = p.budget||'N/A';
+  document.getElementById('notif-ben').textContent = p.ben||'N/A';
+  document.getElementById('notif-visits').textContent = `👁️ ${p.visits} citizen visits`;
+  const badge = document.getElementById('notif-cat-badge');
+  badge.textContent = p.category;
+  badge.className = 'proj-badge '+catClass(p.category);
+  document.getElementById('notif-popup').classList.add('show');
+}
+
+function closeNotif(){
+  document.getElementById('notif-popup').classList.remove('show');
+}
+
+// ══════════════════════════════════════════════
+//  ADMIN
+// ══════════════════════════════════════════════
+function initAdminMap(){
+  adminMap = L.map('admin-map').setView([28.6139,77.2090],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(adminMap);
+  adminMap.on('click',e=>{
+    document.getElementById('f-lat').value = e.latlng.lat.toFixed(6);
+    document.getElementById('f-lng').value = e.latlng.lng.toFixed(6);
+    showToast('📍 Coordinates filled from map click!');
+  });
+  renderAdminMapMarkers();
+}
+
+function renderAdminMapMarkers(){
+  if(!adminMap) return;
+  adminMap.eachLayer(l=>{ if(l instanceof L.Marker||l instanceof L.Circle) adminMap.removeLayer(l); });
+  projects.forEach(p=>{
+    L.circle([p.lat,p.lng],{radius:p.radius,color:catColor(p.category),fillOpacity:0.1,weight:2}).addTo(adminMap);
+    L.marker([p.lat,p.lng],{icon:createDivIcon(p.category)}).addTo(adminMap)
+      .bindTooltip(p.name,{permanent:false});
+  });
+}
+
+function renderAdminStats(){
+  const total = projects.length;
+  const totalVisits = projects.reduce((s,p)=>s+p.visits,0);
+  const top = projects.sort((a,b)=>b.visits-a.visits)[0];
+  const cats = [...new Set(projects.map(p=>p.category))].length;
+  document.getElementById('admin-stats').innerHTML = `
+    <div class="stat-card" style="--accent-color:#3b82f6">
+      <div class="stat-icon">📍</div>
+      <div class="stat-label">Total Projects</div>
+      <div class="stat-value" style="color:var(--accent)">${total}</div>
+      <div class="stat-sub">${cats} categories</div>
+    </div>
+    <div class="stat-card" style="--accent-color:#10b981">
+      <div class="stat-icon">👁️</div>
+      <div class="stat-label">Total Citizen Visits</div>
+      <div class="stat-value" style="color:var(--green)">${totalVisits.toLocaleString()}</div>
+      <div class="stat-sub">across all zones</div>
+    </div>
+    <div class="stat-card" style="--accent-color:#f59e0b">
+      <div class="stat-icon">🏆</div>
+      <div class="stat-label">Most Visited Zone</div>
+      <div class="stat-value" style="color:#fbbf24;font-size:1.1rem;margin-top:4px">${top?top.name.substring(0,18)+'…':'—'}</div>
+      <div class="stat-sub">${top?top.visits+' visits':''}</div>
+    </div>
+    <div class="stat-card" style="--accent-color:#8b5cf6">
+      <div class="stat-icon">💰</div>
+      <div class="stat-label">Avg Geo-fence Radius</div>
+      <div class="stat-value" style="color:#a78bfa">${total?Math.round(projects.reduce((s,p)=>s+p.radius,0)/total):0}m</div>
+      <div class="stat-sub">per zone</div>
+    </div>`;
+}
+
+function renderAdminList(){
+  const el = document.getElementById('admin-project-list');
+  document.getElementById('proj-count-label').textContent = projects.length+' total';
+  if(!projects.length){
+    el.innerHTML='<div class="empty-state"><div class="icon">📭</div><p>No projects yet. Add your first one!</p></div>';
+    return;
+  }
+  el.innerHTML = projects.map(p=>`
+    <div class="project-item">
+      <div class="proj-icon" style="background:${catColor(p.category)}20;">${catIcon(p.category)}</div>
+      <div class="proj-info">
+        <div class="proj-name">${p.name}</div>
+        <div class="proj-meta">${p.radius}m · 👁 ${p.visits} · ${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</div>
+      </div>
+      <span class="proj-badge ${catClass(p.category)}" style="margin-right:6px">${p.category}</span>
+      <div class="proj-actions">
+        <button class="btn btn-ghost btn-sm" onclick="editProject(${p.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteProject(${p.id})">🗑</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderAdminMap(){
+  if(!adminMap){ setTimeout(()=>{initAdminMap();},200); }
+  else { renderAdminMapMarkers(); adminMap.invalidateSize(); }
+}
+
+function saveProject(){
+  const name=document.getElementById('f-name').value.trim();
+  const cat=document.getElementById('f-cat').value;
+  const desc=document.getElementById('f-desc').value.trim();
+  const impact=document.getElementById('f-impact').value.trim();
+  const lat=parseFloat(document.getElementById('f-lat').value);
+  const lng=parseFloat(document.getElementById('f-lng').value);
+  const radius=parseInt(document.getElementById('f-radius').value);
+  const budget=document.getElementById('f-budget').value.trim();
+  const ben=document.getElementById('f-ben').value.trim();
+
+  if(!name||!desc||!impact||isNaN(lat)||isNaN(lng)||!radius){
+    showToast('⚠️ Please fill all required fields'); return;
+  }
+
+  if(editingId){
+    const idx=projects.findIndex(p=>p.id===editingId);
+    if(idx>-1) projects[idx]={...projects[idx],name,category:cat,desc,impact,lat,lng,radius,
+      budget:budget?'₹'+budget+' Cr':null, ben:ben||null};
+    showToast('✅ Project updated!');
+  } else {
+    projects.push({id:Date.now(),name,category:cat,desc,impact,lat,lng,radius,
+      budget:budget?'₹'+budget+' Cr':null, ben:ben||null, visits:0});
+    showToast('✅ Project added!');
+  }
+  saveData();
+  resetForm();
+  renderAdminList();
+  renderAdminStats();
+  renderAdminMapMarkers();
+  renderPublicProjects();
+  populateSimSelect();
+}
+
+function editProject(id){
+  const p=projects.find(x=>x.id===id);
+  if(!p) return;
+  editingId=id;
+  document.getElementById('form-title').textContent='Edit Project';
+  document.getElementById('f-name').value=p.name;
+  document.getElementById('f-cat').value=p.category;
+  document.getElementById('f-desc').value=p.desc;
+  document.getElementById('f-impact').value=p.impact;
+  document.getElementById('f-lat').value=p.lat;
+  document.getElementById('f-lng').value=p.lng;
+  document.getElementById('f-radius').value=p.radius;
+  document.getElementById('f-budget').value=(p.budget||'').replace('₹','').replace(' Cr','');
+  document.getElementById('f-ben').value=p.ben||'';
+  window.scrollTo({top:0,behavior:'smooth'});
+  showToast('✏️ Editing: '+p.name.substring(0,30)+'…');
+}
+
+function deleteProject(id){
+  if(!confirm('Delete this project? This cannot be undone.')) return;
+  projects=projects.filter(p=>p.id!==id);
+  saveData();
+  renderAdminList();
+  renderAdminStats();
+  renderAdminMapMarkers();
+  renderPublicProjects();
+  populateSimSelect();
+  showToast('🗑️ Project deleted');
+}
+
+function resetForm(){
+  editingId=null;
+  document.getElementById('form-title').textContent='Add New Project';
+  ['f-name','f-desc','f-impact','f-lat','f-lng','f-budget','f-ben'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+  document.getElementById('f-radius').value=300;
+  document.getElementById('f-cat').value='Hospital';
+}
+
+// ══════════════════════════════════════════════
+//  ANALYTICS
+// ══════════════════════════════════════════════
+function renderAnalytics(){
+  const total=projects.length;
+  const totalVisits=projects.reduce((s,p)=>s+p.visits,0);
+  const topVisited=projects.reduce((a,b)=>a.visits>b.visits?a:b,{visits:0,name:'—'});
+  const avgRadius=total?Math.round(projects.reduce((s,p)=>s+p.radius,0)/total):0;
+
+  document.getElementById('analytics-stats').innerHTML=`
+    <div class="stat-card">
+      <div class="stat-icon">🗺️</div>
+      <div class="stat-label">Geo-fenced Zones</div>
+      <div class="stat-value" style="color:var(--accent)">${total}</div>
+      <div class="stat-sub">active locations</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">🚶</div>
+      <div class="stat-label">Citizen Entries</div>
+      <div class="stat-value" style="color:var(--green)">${totalVisits.toLocaleString()}</div>
+      <div class="stat-sub">total logged visits</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">⭐</div>
+      <div class="stat-label">Most Visited</div>
+      <div class="stat-value" style="color:#fbbf24;font-size:1rem;margin-top:6px">${topVisited.name.substring(0,20)}…</div>
+      <div class="stat-sub">${topVisited.visits} visits</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📐</div>
+      <div class="stat-label">Avg Zone Radius</div>
+      <div class="stat-value" style="color:#a78bfa">${avgRadius}m</div>
+      <div class="stat-sub">per geo-fence</div>
+    </div>`;
+
+  // Bar chart
+  const sorted=[...projects].sort((a,b)=>b.visits-a.visits);
+  const ctx1=document.getElementById('visits-chart').getContext('2d');
+  if(visitsChart) visitsChart.destroy();
+  visitsChart=new Chart(ctx1,{
+    type:'bar',
+    data:{
+      labels:sorted.map(p=>p.name.length>20?p.name.substring(0,20)+'…':p.name),
+      datasets:[{
+        label:'Visits',
+        data:sorted.map(p=>p.visits),
+        backgroundColor:sorted.map(p=>catColor(p.category)+'88'),
+        borderColor:sorted.map(p=>catColor(p.category)),
+        borderWidth:2, borderRadius:6
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#64748b',font:{size:11}},grid:{color:'rgba(99,179,255,0.05)'}},
+        y:{ticks:{color:'#64748b'},grid:{color:'rgba(99,179,255,0.08)'}}
+      }
+    }
+  });
+
+  // Leaderboard
+  const lb=document.getElementById('leaderboard');
+  const rankClass=['gold','silver','bronze','other','other'];
+  const maxV=sorted[0]?.visits||1;
+  lb.innerHTML=sorted.slice(0,5).map((p,i)=>`
+    <div class="lb-item">
+      <div class="lb-rank ${rankClass[i]}">#${i+1}</div>
+      <div style="flex:1">
+        <div class="lb-name">${p.name.substring(0,30)}${p.name.length>30?'…':''}</div>
+        <div class="progress-bar-wrap"><div class="progress-bar"><div class="progress-fill" style="width:${(p.visits/maxV*100).toFixed(1)}%"></div></div></div>
+      </div>
+      <div class="lb-visits">${p.visits}</div>
+    </div>`).join('');
+
+  // Category donut
+  const catCounts={};
+  projects.forEach(p=>{ catCounts[p.category]=(catCounts[p.category]||0)+1; });
+  const ctx2=document.getElementById('cat-chart').getContext('2d');
+  if(catChart) catChart.destroy();
+  catChart=new Chart(ctx2,{
+    type:'doughnut',
+    data:{
+      labels:Object.keys(catCounts),
+      datasets:[{
+        data:Object.values(catCounts),
+        backgroundColor:Object.keys(catCounts).map(c=>catColor(c)+'99'),
+        borderColor:Object.keys(catCounts).map(c=>catColor(c)),
+        borderWidth:2
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{
+          position:'right',
+          labels:{color:'#94a3b8',font:{size:11},boxWidth:12}
+        }
+      }
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════
+let toastTimer=null;
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+window.addEventListener('load',()=>{
+  initPublicMap();
+  // Auto-trigger first simulate after 2 seconds for demo effect
+  setTimeout(()=>{
+    showToast('💡 Use the simulator above to demo geo-fence entry!');
+  },1500);
+});
+</script>
+</body>
+</html>
